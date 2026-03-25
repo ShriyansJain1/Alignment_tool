@@ -1,4 +1,5 @@
 import colorsys
+import math
 
 
 def get_color(i):
@@ -7,15 +8,23 @@ def get_color(i):
     return f"rgb({int(r*255)},{int(g*255)},{int(b*255)})"
 
 
-def square_polygon(lat, lon, step=0.7):
-    half = step / 2
-    return [
-        [lon - half, lat - half],
-        [lon + half, lat - half],
-        [lon + half, lat + half],
-        [lon - half, lat + half],
-        [lon - half, lat - half],
-    ]
+def zip_like_polygon(lat, lon, step=0.7):
+    """Return a compact hexagon around a ZIP centroid.
+
+    Hex cells read much closer to area polygons than square grid cells,
+    while still being deterministic and lightweight.
+    """
+    radius = step * 0.43
+    vertices = []
+
+    for angle in range(0, 360, 60):
+        rad = math.radians(angle)
+        x = lon + radius * math.cos(rad)
+        y = lat + radius * math.sin(rad)
+        vertices.append([x, y])
+
+    vertices.append(vertices[0])
+    return vertices
 
 
 def generate_geojson(df, col):
@@ -35,7 +44,7 @@ def generate_geojson(df, col):
                 },
                 "geometry": {
                     "type": "Polygon",
-                    "coordinates": [square_polygon(row["lat"], row["lon"])],
+                    "coordinates": [zip_like_polygon(row["lat"], row["lon"])],
                 },
             }
         )

@@ -21,8 +21,8 @@ export default function MapView({ geojson }) {
         style: "mapbox://styles/mapbox/light-v10",
         center: [-98, 38],
         zoom: 3,
-        maxBounds: US_BOUNDS,
         renderWorldCopies: false,
+        minZoom: 2,
       });
 
       mapRef.current.on("load", () => {
@@ -49,8 +49,8 @@ export default function MapView({ geojson }) {
           source: "zips",
           paint: {
             "line-color": "#ffffff",
-            "line-width": 0.35,
-            "line-opacity": 0.6,
+            "line-width": 0.2,
+            "line-opacity": 0.22,
           },
         });
       });
@@ -59,7 +59,6 @@ export default function MapView({ geojson }) {
       if (source) {
         source.setData(geojson);
       }
-      mapRef.current.fitBounds(US_BOUNDS, { padding: 8, duration: 0 });
     }
   }, [geojson]);
 
