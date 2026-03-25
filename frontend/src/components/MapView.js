@@ -18,7 +18,7 @@ export default function MapView({ geojson }) {
     if (!mapRef.current) {
       mapRef.current = new mapboxgl.Map({
         container: mapContainer.current,
-        style: "mapbox://styles/mapbox/light-v10",
+        style: "mapbox://styles/mapbox/light-v11",
         center: [-98, 38],
         zoom: 3,
         renderWorldCopies: false,
@@ -39,7 +39,7 @@ export default function MapView({ geojson }) {
           source: "zips",
           paint: {
             "fill-color": ["get", "color"],
-            "fill-opacity": 0.78,
+            "fill-opacity": 0.56,
           },
         });
 
@@ -48,9 +48,9 @@ export default function MapView({ geojson }) {
           type: "line",
           source: "zips",
           paint: {
-            "line-color": "#ffffff",
-            "line-width": 0.2,
-            "line-opacity": 0.22,
+            "line-color": "rgba(255,255,255,0.85)",
+            "line-width": 0.45,
+            "line-opacity": 0.5,
           },
         });
       });
@@ -62,5 +62,5 @@ export default function MapView({ geojson }) {
     }
   }, [geojson]);
 
-  return <div ref={mapContainer} style={{ height: "600px" }} />;
+  return <div ref={mapContainer} style={{ height: "600px", borderRadius: "10px" }} />;
 }
