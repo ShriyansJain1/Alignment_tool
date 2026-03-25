@@ -1,12 +1,39 @@
 import React, { useEffect, useRef } from "react";
-import mapboxgl from "mapbox-gl";
-
-mapboxgl.accessToken = "TBU";
+import maplibregl from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
 
 const US_BOUNDS = [
   [-125, 24],
   [-66, 50],
 ];
+
+const MAPTILER_KEY = process.env.REACT_APP_MAPTILER_KEY;
+
+const baseStyle = MAPTILER_KEY
+  ? `https://api.maptiler.com/maps/streets-v2/style.json?key=${MAPTILER_KEY}`
+  : {
+      version: 8,
+      sources: {
+        osm: {
+          type: "raster",
+          tiles: [
+            "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
+            "https://b.tile.openstreetmap.org/{z}/{x}/{y}.png",
+            "https://c.tile.openstreetmap.org/{z}/{x}/{y}.png",
+          ],
+          tileSize: 256,
+          attribution:
+            '© OpenStreetMap contributors <a href="https://www.openstreetmap.org/copyright">ODbL</a>',
+        },
+      },
+      layers: [
+        {
+          id: "osm",
+          type: "raster",
+          source: "osm",
+        },
+      ],
+    };
 
 export default function MapView({ geojson }) {
   const mapContainer = useRef(null);
@@ -16,9 +43,9 @@ export default function MapView({ geojson }) {
     if (!geojson) return;
 
     if (!mapRef.current) {
-      mapRef.current = new mapboxgl.Map({
+      mapRef.current = new maplibregl.Map({
         container: mapContainer.current,
-        style: "mapbox://styles/mapbox/light-v11",
+        style: baseStyle,
         center: [-98, 38],
         zoom: 3,
         renderWorldCopies: false,
