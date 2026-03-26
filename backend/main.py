@@ -5,7 +5,7 @@ import numpy as np
 import json
 import os
 
-from geo_utils import (
+from backend.geo_utils import (
     generate_geojson,
     generate_geojson_with_boundaries,
     index_boundaries_by_zip,
@@ -111,6 +111,54 @@ def generate_us_grid():
     return pd.DataFrame(data)
 
 
+def _coords_centroid(coords):
+    points = []
+
+    def collect(arr):
+        if not arr:
+            return
+        if isinstance(arr[0], (int, float)):
+            points.append(arr)
+            return
+        for item in arr:
+            collect(item)
+
+    collect(coords)
+    if not points:
+        return (0.0, 0.0)
+
+    lon = sum(p[0] for p in points) / len(points)
+    lat = sum(p[1] for p in points) / len(points)
+    return lat, lon
+
+
+def build_zip_frame_from_boundaries(boundary_geojson):
+    """Create a ZIP dataframe from real ZIP geometries.
+
+    This turns ZIP boundary data into row-level ZIP records so downstream
+    logic can assign territories and color exact shapes.
+    """
+    records = []
+    geometry_by_zip = index_boundaries_by_zip(boundary_geojson)
+
+    for zip_code, geometry in geometry_by_zip.items():
+        lat, lon = _coords_centroid(geometry.get("coordinates", []))
+        records.append(
+            {
+                "zip": zip_code,
+                "lat": round(float(lat), 6),
+                "lon": round(float(lon), 6),
+                "state": closest_state(lat, lon),
+                "workload": int(np.random.randint(10, 100)),
+            }
+        )
+
+    if not records:
+        return pd.DataFrame(), geometry_by_zip
+
+    return pd.DataFrame(records), geometry_by_zip
+
+
 def apply_proposed_merges(df):
     # User requested merge "ME, VE and WA + OR"; interpret VE as VT.
     state_to_group = {state: state for state in STATE_BBOX.keys()}
@@ -129,26 +177,53 @@ def build_territory_column(df, source_col, target_col):
 
 
 def load_zip_boundaries():
-    """Load ZIP boundary GeoJSON from ZIP_BOUNDARY_GEOJSON path, if configured."""
-    path = os.getenv("ZIP_BOUNDARY_GEOJSON")
-    if not path or not os.path.exists(path):
-        return None
+    """Load ZIP boundary data from either GeoJSON or a shapefile path."""
+    geojson_path = os.getenv("ZIP_BOUNDARY_GEOJSON")
+    if geojson_path and os.path.exists(geojson_path):
+        with open(geojson_path, "r", encoding="utf-8") as f:
+            return json.load(f)
 
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+    shp_path = os.getenv("ZIP_BOUNDARY_SHP")
+    if shp_path and os.path.exists(shp_path):
+        import shapefile
+
+        reader = shapefile.Reader(shp_path)
+        field_names = [field[0] for field in reader.fields[1:]]
+        features = []
+
+        for shape_record in reader.iterShapeRecords():
+            props = dict(zip(field_names, shape_record.record))
+            geom = shape_record.shape.__geo_interface__
+            features.append(
+                {
+                    "type": "Feature",
+                    "properties": props,
+                    "geometry": geom,
+                }
+            )
+
+        return {"type": "FeatureCollection", "features": features}
+
+    return None
 
 
 @app.get("/run")
 def run():
-    df = generate_us_grid()
+    zip_boundaries = load_zip_boundaries()
+    geometry_by_zip = None
+
+    if zip_boundaries:
+        df, geometry_by_zip = build_zip_frame_from_boundaries(zip_boundaries)
+        if df.empty:
+            df = generate_us_grid()
+            geometry_by_zip = None
+    else:
+        df = generate_us_grid()
 
     df = build_territory_column(df, "state", "current_territory")
 
     df = apply_proposed_merges(df)
     df = build_territory_column(df, "proposed_state", "proposed_territory")
-
-    zip_boundaries = load_zip_boundaries()
-    geometry_by_zip = index_boundaries_by_zip(zip_boundaries) if zip_boundaries else None
 
     if geometry_by_zip:
         current_geojson = generate_geojson_with_boundaries(

@@ -104,7 +104,15 @@ def index_boundaries_by_zip(boundary_geojson, zip_property_candidates=None):
         return {}
 
     if zip_property_candidates is None:
-        zip_property_candidates = ["zip", "ZIP", "zcta", "ZCTA", "ZCTA5CE10"]
+        zip_property_candidates = [
+            "zip",
+            "ZIP",
+            "zcta",
+            "ZCTA",
+            "ZCTA5CE10",
+            "ZCTA5CE20",
+            "GEOID20",
+        ]
 
     features = boundary_geojson.get("features", [])
     geometry_by_zip = {}
