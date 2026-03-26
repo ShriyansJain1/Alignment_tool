@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import json
 import os
+from pathlib import Path
 
 from geo_utils import (
     generate_geojson,
@@ -178,16 +179,10 @@ def build_territory_column(df, source_col, target_col):
 
 def load_zip_boundaries():
     """Load ZIP boundary data from either GeoJSON or a shapefile path."""
-    geojson_path = os.getenv("ZIP_BOUNDARY_GEOJSON")
-    if geojson_path and os.path.exists(geojson_path):
-        with open(geojson_path, "r", encoding="utf-8") as f:
-            return json.load(f)
-
-    shp_path = os.getenv("ZIP_BOUNDARY_SHP")
-    if shp_path and os.path.exists(shp_path):
+    def read_shapefile_as_feature_collection(shp_like_path):
         import shapefile
 
-        reader = shapefile.Reader(shp_path)
+        reader = shapefile.Reader(str(shp_like_path))
         field_names = [field[0] for field in reader.fields[1:]]
         features = []
 
@@ -204,6 +199,43 @@ def load_zip_boundaries():
 
         return {"type": "FeatureCollection", "features": features}
 
+    def resolve_shp_from_input(path_or_dir):
+        path = Path(path_or_dir)
+        if path.is_file():
+            return path
+        if not path.is_dir():
+            return None
+
+        shp_candidates = sorted(path.glob("*.shp"))
+        if not shp_candidates:
+            return None
+        # Prefer common census ZIP boundary naming where present.
+        for candidate in shp_candidates:
+            if "zcta" in candidate.name.lower():
+                return candidate
+        return shp_candidates[0]
+
+    geojson_path = os.getenv("ZIP_BOUNDARY_GEOJSON")
+    if geojson_path and os.path.exists(geojson_path):
+        with open(geojson_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    shp_path = os.getenv("ZIP_BOUNDARY_SHP")
+    if shp_path:
+        shp_resolved = resolve_shp_from_input(shp_path)
+        if shp_resolved and shp_resolved.exists():
+            return read_shapefile_as_feature_collection(shp_resolved)
+
+    shp_zip_path = os.getenv("ZIP_BOUNDARY_SHP_ZIP")
+    if shp_zip_path and os.path.exists(shp_zip_path):
+        return read_shapefile_as_feature_collection(shp_zip_path)
+
+    shp_dir = os.getenv("ZIP_BOUNDARY_DIR")
+    if shp_dir:
+        shp_resolved = resolve_shp_from_input(shp_dir)
+        if shp_resolved and shp_resolved.exists():
+            return read_shapefile_as_feature_collection(shp_resolved)
+
     return None
 
 
@@ -211,12 +243,15 @@ def load_zip_boundaries():
 def run():
     zip_boundaries = load_zip_boundaries()
     geometry_by_zip = None
+    source = "synthetic_hex_grid"
 
     if zip_boundaries:
         df, geometry_by_zip = build_zip_frame_from_boundaries(zip_boundaries)
         if df.empty:
             df = generate_us_grid()
             geometry_by_zip = None
+        else:
+            source = "zip_boundary_polygons"
     else:
         df = generate_us_grid()
 
@@ -239,4 +274,12 @@ def run():
     return {
         "current": current_geojson,
         "proposed": proposed_geojson,
+        "meta": {
+            "source": source,
+            "zip_count": int(len(df)),
+            "boundary_feature_count": (
+                int(len(zip_boundaries.get("features", []))) if zip_boundaries else 0
+            ),
+            "joined_polygon_count": int(len(current_geojson.get("features", []))),
+        },
     }

@@ -109,9 +109,13 @@ def index_boundaries_by_zip(boundary_geojson, zip_property_candidates=None):
             "ZIP",
             "zcta",
             "ZCTA",
+            "GEOID",
+            "GEOID10",
+            "GEOID20",
             "ZCTA5CE10",
             "ZCTA5CE20",
-            "GEOID20",
+            "ZCTA5CE",
+            "ZCTA5CE21",
         ]
 
     features = boundary_geojson.get("features", [])
@@ -123,9 +127,16 @@ def index_boundaries_by_zip(boundary_geojson, zip_property_candidates=None):
 
         for key in zip_property_candidates:
             value = props.get(key)
-            if value:
-                zip_code = str(value).zfill(5)
-                break
+            if value is None:
+                continue
+            value_text = str(value).strip()
+            if not value_text:
+                continue
+            # Typical shapefile DBF values can be numeric-looking (e.g. 98052.0).
+            if value_text.endswith(".0"):
+                value_text = value_text[:-2]
+            zip_code = value_text.zfill(5)
+            break
 
         if not zip_code:
             continue
