@@ -1,5 +1,6 @@
 import colorsys
 import math
+from copy import deepcopy
 
 
 TABLEAU_20 = [
@@ -88,6 +89,80 @@ def generate_geojson(df, col):
                     "type": "Polygon",
                     "coordinates": [zip_like_polygon(row["lat"], row["lon"])],
                 },
+            }
+        )
+
+    return {"type": "FeatureCollection", "features": features}
+
+
+def index_boundaries_by_zip(boundary_geojson, zip_property_candidates=None):
+    """Build a zip -> geometry index from a ZIP boundary GeoJSON object.
+
+    The helper supports common ZIP property names used by Census/3rd-party data.
+    """
+    if not boundary_geojson:
+        return {}
+
+    if zip_property_candidates is None:
+        zip_property_candidates = [
+            "zip",
+            "ZIP",
+            "zcta",
+            "ZCTA",
+            "ZCTA5CE10",
+            "ZCTA5CE20",
+            "GEOID20",
+        ]
+
+    features = boundary_geojson.get("features", [])
+    geometry_by_zip = {}
+
+    for feature in features:
+        props = feature.get("properties", {})
+        zip_code = None
+
+        for key in zip_property_candidates:
+            value = props.get(key)
+            if value:
+                zip_code = str(value).zfill(5)
+                break
+
+        if not zip_code:
+            continue
+
+        geometry = feature.get("geometry")
+        if geometry:
+            geometry_by_zip[zip_code] = deepcopy(geometry)
+
+    return geometry_by_zip
+
+
+def generate_geojson_with_boundaries(df, col, geometry_by_zip):
+    """Generate ZIP-level choropleth features by coloring existing boundaries.
+
+    This follows the recommended pipeline:
+    ZIP boundaries + ZIP->territory mapping -> colored ZIP polygons.
+    """
+    features = []
+
+    for _, row in df.iterrows():
+        zip_code = str(row["zip"]).zfill(5)
+        geometry = geometry_by_zip.get(zip_code)
+
+        if not geometry:
+            continue
+
+        terr = int(row[col])
+        features.append(
+            {
+                "type": "Feature",
+                "properties": {
+                    "zip": zip_code,
+                    "state": row["state"],
+                    "territory": terr,
+                    "color": get_color(terr),
+                },
+                "geometry": geometry,
             }
         )
 
