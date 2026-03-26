@@ -38,6 +38,7 @@ const baseStyle = MAPTILER_KEY
 export default function MapView({ geojson }) {
   const mapContainer = useRef(null);
   const mapRef = useRef(null);
+  const popupRef = useRef(null);
 
   useEffect(() => {
     if (!geojson) return;
@@ -79,6 +80,29 @@ export default function MapView({ geojson }) {
             "line-width": 0.45,
             "line-opacity": 0.5,
           },
+        });
+
+        mapRef.current.on("click", "zip-fill", (event) => {
+          const feature = event.features?.[0];
+          const props = feature?.properties || {};
+          const content = [
+            `<b>ZIP:</b> ${props.zip || "-"}`,
+            `<b>Territory:</b> ${props.territory ?? "-"}`,
+            `<b>Shape ID:</b> ${props.shape_id || props.zip || "-"}`,
+          ].join("<br/>");
+
+          if (!popupRef.current) {
+            popupRef.current = new maplibregl.Popup({ closeButton: true, closeOnClick: true });
+          }
+          popupRef.current.setLngLat(event.lngLat).setHTML(content).addTo(mapRef.current);
+        });
+
+        mapRef.current.on("mouseenter", "zip-fill", () => {
+          mapRef.current.getCanvas().style.cursor = "pointer";
+        });
+
+        mapRef.current.on("mouseleave", "zip-fill", () => {
+          mapRef.current.getCanvas().style.cursor = "";
         });
       });
     } else {

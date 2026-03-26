@@ -148,7 +148,7 @@ def index_boundaries_by_zip(boundary_geojson, zip_property_candidates=None):
     return geometry_by_zip
 
 
-def generate_geojson_with_boundaries(df, col, geometry_by_zip):
+def generate_geojson_with_boundaries(df, col, geometry_by_zip, shape_id_by_zip=None):
     """Generate ZIP-level choropleth features by coloring existing boundaries.
 
     This follows the recommended pipeline:
@@ -164,15 +164,19 @@ def generate_geojson_with_boundaries(df, col, geometry_by_zip):
             continue
 
         terr = int(row[col])
+        props = {
+            "zip": zip_code,
+            "state": row["state"],
+            "territory": terr,
+            "color": get_color(terr),
+        }
+        if shape_id_by_zip:
+            props["shape_id"] = shape_id_by_zip.get(zip_code, zip_code)
+
         features.append(
             {
                 "type": "Feature",
-                "properties": {
-                    "zip": zip_code,
-                    "state": row["state"],
-                    "territory": terr,
-                    "color": get_color(terr),
-                },
+                "properties": props,
                 "geometry": geometry,
             }
         )
