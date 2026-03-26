@@ -30,6 +30,20 @@ export ZIP_BOUNDARY_GEOJSON=/absolute/path/to/zip_boundaries.geojson
 export ZIP_BOUNDARY_SHP=/absolute/path/to/tl_2020_us_zcta520.shp
 ```
 
+You can also point `ZIP_BOUNDARY_SHP` to a **folder** that contains shapefiles; the backend will auto-pick a `.shp` file (prefers names containing `zcta`).
+
+3) **Zipped shapefile** (`.zip` that contains `.shp/.dbf/.shx`):
+
+```bash
+export ZIP_BOUNDARY_SHP_ZIP=/absolute/path/to/tl_2020_us_zcta520.zip
+```
+
+4) **Directory input** (explicit folder variable):
+
+```bash
+export ZIP_BOUNDARY_DIR=/absolute/path/to/downloads/extracted_folder
+```
+
 Then run the backend as usual. If neither `ZIP_BOUNDARY_GEOJSON` nor `ZIP_BOUNDARY_SHP` is set, the app falls back to synthetic hex ZIP cells.
 
 When either variable is set, `/run` builds rows from your ZIP boundary features so the map renders **exact ZIP polygons** (instead of synthetic hexes).
@@ -63,6 +77,21 @@ export ZIP_BOUNDARY_SHP=/path/to/tl_2020_us_zcta520.shp
 ```
 
 and start backend/frontend; the map will use those exact ZCTA geometries.
+
+### Troubleshooting (if you still see hexagons)
+
+If `/run` cannot build a ZIP->polygon index, the backend falls back to synthetic hexes.
+Check the `/run` response `meta` object:
+
+- `meta.source` should be `zip_boundary_polygons`
+- `meta.joined_polygon_count` should be greater than `0`
+
+If not, verify:
+
+- your env var points to an existing file
+- if you use a folder, it must contain at least one `.shp` (with matching `.dbf/.shx`)
+- DBF has a ZIP field (supported examples: `ZCTA5CE10`, `ZCTA5CE20`, `GEOID10`, `GEOID20`)
+- ZIP codes are 5-digit strings in your assignment data
 
 ### Conceptual join
 
