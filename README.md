@@ -30,6 +30,14 @@ export ZIP_BOUNDARY_GEOJSON=/absolute/path/to/zip_boundaries.geojson
 export ZIP_BOUNDARY_SHP=/absolute/path/to/tl_2020_us_zcta520.shp
 ```
 
+PowerShell example (Windows):
+
+```powershell
+$env:ZIP_BOUNDARY_SHP="C:\Users\ShriyansJain\Downloads\tl_2020_us_zcta520.shp"
+```
+
+The backend accepts this Windows-style path format directly. If you run backend in WSL/Linux, ensure the file is reachable there (for example `/mnt/c/Users/...`).
+
 You can also point `ZIP_BOUNDARY_SHP` to a **folder** that contains shapefiles; the backend will auto-pick a `.shp` file (prefers names containing `zcta`).
 
 3) **Zipped shapefile** (`.zip` that contains `.shp/.dbf/.shx`):
@@ -37,6 +45,10 @@ You can also point `ZIP_BOUNDARY_SHP` to a **folder** that contains shapefiles; 
 ```bash
 export ZIP_BOUNDARY_SHP_ZIP=/absolute/path/to/tl_2020_us_zcta520.zip
 ```
+
+The backend now auto-extracts this archive and will use either:
+- a `.geojson` inside the zip (if present), or
+- the first `.shp` set (prefers filenames containing `zcta`).
 
 4) **Directory input** (explicit folder variable):
 
