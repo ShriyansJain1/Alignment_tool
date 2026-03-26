@@ -229,6 +229,73 @@ def build_territory_column(df, source_col, target_col):
     return df
 
 
+def extract_zip_code_from_properties(props):
+    zip_property_candidates = [
+        "zip",
+        "ZIP",
+        "zcta",
+        "ZCTA",
+        "GEOID",
+        "GEOID10",
+        "GEOID20",
+        "ZCTA5CE10",
+        "ZCTA5CE20",
+        "ZCTA5CE",
+        "ZCTA5CE21",
+    ]
+    for key in zip_property_candidates:
+        value = props.get(key)
+        if value is None:
+            continue
+        value_text = str(value).strip()
+        if not value_text:
+            continue
+        if value_text.endswith(".0"):
+            value_text = value_text[:-2]
+        return value_text.zfill(5)
+    return None
+
+
+def build_shape_id_index(boundary_geojson):
+    """Build ZIP -> shape identifier for transparent UI/debug mapping."""
+    if not boundary_geojson:
+        return {}
+
+    shape_id_by_zip = {}
+    for idx, feature in enumerate(boundary_geojson.get("features", [])):
+        props = feature.get("properties", {})
+        zip_code = extract_zip_code_from_properties(props)
+        if not zip_code:
+            continue
+
+        candidate_id = (
+            feature.get("id")
+            or props.get("shape_id")
+            or props.get("OBJECTID")
+            or props.get("OBJECTID10")
+            or props.get("OBJECTID20")
+            or props.get("FID")
+            or props.get("GEOID")
+            or zip_code
+        )
+        shape_id_by_zip[zip_code] = str(candidate_id) if candidate_id else f"feature_{idx}"
+    return shape_id_by_zip
+
+
+def build_territory_zip_shape_mapping(df, territory_col, shape_id_by_zip):
+    rows = []
+    for _, record in df.iterrows():
+        zip_code = str(record["zip"]).zfill(5)
+        rows.append(
+            {
+                "territory": int(record[territory_col]),
+                "zip": zip_code,
+                "shape_id": shape_id_by_zip.get(zip_code, zip_code),
+            }
+        )
+    return sorted(rows, key=lambda r: (r["territory"], r["zip"]))
+
+
 def load_zip_boundaries():
     """Load ZIP boundary data from either GeoJSON or a shapefile path."""
     def normalize_input_path(raw_value):
@@ -363,10 +430,12 @@ def run():
     }
     zip_boundaries = load_zip_boundaries()
     geometry_by_zip = None
+    shape_id_by_zip = {}
     source = "synthetic_hex_grid"
 
     if zip_boundaries:
         df, geometry_by_zip = build_zip_frame_from_boundaries(zip_boundaries)
+        shape_id_by_zip = build_shape_id_index(zip_boundaries)
         if df.empty:
             raise HTTPException(
                 status_code=400,
@@ -400,18 +469,29 @@ def run():
 
     if geometry_by_zip:
         current_geojson = generate_geojson_with_boundaries(
-            df, "current_territory", geometry_by_zip
+            df, "current_territory", geometry_by_zip, shape_id_by_zip
         )
         proposed_geojson = generate_geojson_with_boundaries(
-            df, "proposed_territory", geometry_by_zip
+            df, "proposed_territory", geometry_by_zip, shape_id_by_zip
         )
     else:
         current_geojson = generate_geojson(df, "current_territory")
         proposed_geojson = generate_geojson(df, "proposed_territory")
 
+    current_mapping = build_territory_zip_shape_mapping(
+        df, "current_territory", shape_id_by_zip
+    )
+    proposed_mapping = build_territory_zip_shape_mapping(
+        df, "proposed_territory", shape_id_by_zip
+    )
+
     return {
         "current": current_geojson,
         "proposed": proposed_geojson,
+        "mapping": {
+            "current": current_mapping,
+            "proposed": proposed_mapping,
+        },
         "meta": {
             "source": source,
             "zip_count": int(len(df)),
