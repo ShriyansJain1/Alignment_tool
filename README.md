@@ -57,6 +57,7 @@ export ZIP_BOUNDARY_DIR=/absolute/path/to/downloads/extracted_folder
 ```
 
 Then run the backend as usual. If neither `ZIP_BOUNDARY_GEOJSON` nor `ZIP_BOUNDARY_SHP` is set, the app falls back to synthetic hex ZIP cells.
+If any boundary env var is set but loading fails, `/run` now returns an explicit error instead of silently falling back, so issues are visible immediately.
 
 When either variable is set, `/run` builds rows from your ZIP boundary features so the map renders **exact ZIP polygons** (instead of synthetic hexes).
 

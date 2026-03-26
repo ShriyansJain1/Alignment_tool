@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 import numpy as np
@@ -75,6 +75,40 @@ STATE_BBOX = {
     "WI": (42.4, 47.3, -92.9, -86.8),
     "WY": (41.0, 45.0, -111.1, -104.0),
 }
+
+BOUNDARY_ENV_KEYS = [
+    "ZIP_BOUNDARY_GEOJSON",
+    "ZIP_BOUNDARY_SHP",
+    "ZIP_BOUNDARY_SHP_ZIP",
+    "ZIP_BOUNDARY_DIR",
+]
+
+
+def normalize_input_path(raw_value):
+    """Normalize env-provided paths, including Windows-style inputs."""
+    if not raw_value:
+        return None
+
+    cleaned = str(raw_value).strip().strip('"').strip("'")
+    if not cleaned:
+        return None
+
+    # If a native/relative path exists as provided, use it first.
+    direct = Path(cleaned).expanduser()
+    if direct.exists():
+        return direct
+
+    # Accept Windows paths like C:\Users\name\file.shp (common from PowerShell).
+    windows_drive_match = re.match(r"^([A-Za-z]):[\\/](.*)$", cleaned)
+    if windows_drive_match:
+        drive = windows_drive_match.group(1).lower()
+        rest = windows_drive_match.group(2).replace("\\", "/")
+        wsl_candidate = Path(f"/mnt/{drive}/{rest}")
+        if wsl_candidate.exists():
+            return wsl_candidate
+
+    # Fall back to the cleaned path so downstream checks can handle it.
+    return Path(cleaned)
 
 
 def closest_state(lat, lon):
@@ -300,6 +334,9 @@ def load_zip_boundaries():
 
 @app.get("/run")
 def run():
+    configured_boundary_inputs = {
+        key: os.getenv(key) for key in BOUNDARY_ENV_KEYS if os.getenv(key)
+    }
     zip_boundaries = load_zip_boundaries()
     geometry_by_zip = None
     source = "synthetic_hex_grid"
@@ -307,10 +344,28 @@ def run():
     if zip_boundaries:
         df, geometry_by_zip = build_zip_frame_from_boundaries(zip_boundaries)
         if df.empty:
-            df = generate_us_grid()
-            geometry_by_zip = None
-        else:
-            source = "zip_boundary_polygons"
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "ZIP boundaries were loaded but no ZIP code field could be indexed. "
+                    "Expected one of: zip, ZIP, zcta, ZCTA, GEOID, GEOID10, GEOID20, "
+                    "ZCTA5CE10, ZCTA5CE20, ZCTA5CE, ZCTA5CE21."
+                ),
+            )
+        source = "zip_boundary_polygons"
+    elif configured_boundary_inputs:
+        resolved = {
+            key: str(normalize_input_path(value))
+            for key, value in configured_boundary_inputs.items()
+        }
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Boundary input env var is set, but no boundary file could be loaded. "
+                f"Configured inputs: {configured_boundary_inputs}. "
+                f"Resolved paths: {resolved}."
+            ),
+        )
     else:
         df = generate_us_grid()
 
