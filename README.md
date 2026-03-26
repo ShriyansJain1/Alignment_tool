@@ -138,3 +138,37 @@ REACT_APP_MAPTILER_KEY=your_maptiler_key_here
 ```
 
 Restart the frontend after changing `.env`.
+
+## Backend connectivity (fixes `Network Error` in UI)
+
+If the UI shows `Failed to load ZIP boundary shapes: Network Error`, it means the frontend cannot reach the backend API.
+
+Start backend:
+
+```bash
+cd backend
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+Or, from `backend/`, run directly:
+
+```bash
+python main.py
+```
+
+Optionally set API URL explicitly for frontend:
+
+```bash
+# frontend/.env
+REACT_APP_API_BASE_URL=http://localhost:8000
+```
+
+## Backend dependency note (`ModuleNotFoundError: No module named 'shapefile'`)
+
+Shapefile loading requires **pyshp** (import name: `shapefile`).
+
+Install backend dependencies before starting:
+
+```bash
+pip install -r requirements.txt
+```

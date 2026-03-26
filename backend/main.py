@@ -1,10 +1,12 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
 import pandas as pd
 import numpy as np
 import json
 import os
 import re
+import importlib.util
 import tempfile
 import zipfile
 from pathlib import Path
@@ -243,6 +245,15 @@ def load_zip_boundaries():
         return Path(cleaned)
 
     def read_shapefile_as_feature_collection(shp_like_path):
+        if importlib.util.find_spec("shapefile") is None:
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    "Missing dependency 'pyshp' (module name: shapefile). "
+                    "Install dependencies with `pip install -r requirements.txt` "
+                    "or add pyshp to your environment."
+                ),
+            )
         import shapefile
 
         reader = shapefile.Reader(str(shp_like_path))
@@ -397,3 +408,7 @@ def run():
             "joined_polygon_count": int(len(current_geojson.get("features", []))),
         },
     }
+
+
+if __name__ == "__main__":
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
