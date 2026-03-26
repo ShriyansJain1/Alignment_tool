@@ -30,6 +30,14 @@ export ZIP_BOUNDARY_GEOJSON=/absolute/path/to/zip_boundaries.geojson
 export ZIP_BOUNDARY_SHP=/absolute/path/to/tl_2020_us_zcta520.shp
 ```
 
+PowerShell example (Windows):
+
+```powershell
+$env:ZIP_BOUNDARY_SHP="C:\Users\ShriyansJain\Downloads\tl_2020_us_zcta520.shp"
+```
+
+The backend accepts this Windows-style path format directly. If you run backend in WSL/Linux, ensure the file is reachable there (for example `/mnt/c/Users/...`).
+
 You can also point `ZIP_BOUNDARY_SHP` to a **folder** that contains shapefiles; the backend will auto-pick a `.shp` file (prefers names containing `zcta`).
 
 3) **Zipped shapefile** (`.zip` that contains `.shp/.dbf/.shx`):
@@ -38,6 +46,10 @@ You can also point `ZIP_BOUNDARY_SHP` to a **folder** that contains shapefiles; 
 export ZIP_BOUNDARY_SHP_ZIP=/absolute/path/to/tl_2020_us_zcta520.zip
 ```
 
+The backend now auto-extracts this archive and will use either:
+- a `.geojson` inside the zip (if present), or
+- the first `.shp` set (prefers filenames containing `zcta`).
+
 4) **Directory input** (explicit folder variable):
 
 ```bash
@@ -45,6 +57,7 @@ export ZIP_BOUNDARY_DIR=/absolute/path/to/downloads/extracted_folder
 ```
 
 Then run the backend as usual. If neither `ZIP_BOUNDARY_GEOJSON` nor `ZIP_BOUNDARY_SHP` is set, the app falls back to synthetic hex ZIP cells.
+If any boundary env var is set but loading fails, `/run` now returns an explicit error instead of silently falling back, so issues are visible immediately.
 
 When either variable is set, `/run` builds rows from your ZIP boundary features so the map renders **exact ZIP polygons** (instead of synthetic hexes).
 
