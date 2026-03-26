@@ -5,7 +5,7 @@ import numpy as np
 import json
 import os
 
-from backend.geo_utils import (
+from geo_utils import (
     generate_geojson,
     generate_geojson_with_boundaries,
     index_boundaries_by_zip,
