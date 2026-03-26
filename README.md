@@ -61,6 +61,22 @@ If any boundary env var is set but loading fails, `/run` now returns an explicit
 
 When either variable is set, `/run` builds rows from your ZIP boundary features so the map renders **exact ZIP polygons** (instead of synthetic hexes).
 
+### One-off boundary path (without env vars)
+
+You can also pass a boundary path per request:
+
+```bash
+curl "http://localhost:8000/run?boundary_path=/absolute/path/to/tl_2020_us_zcta520.zip"
+```
+
+Supported query-path inputs are:
+- `.geojson` / `.json`
+- `.zip` containing boundary files
+- `.shp`
+- a directory containing `.shp` files
+
+The frontend Controls panel now includes an optional "ZIP boundary file/folder path" input that calls this same `boundary_path` query parameter.
+
 ### Supported ZIP property names
 
 The ZIP boundary loader recognizes these property names by default:

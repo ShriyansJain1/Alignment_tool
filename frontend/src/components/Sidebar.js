@@ -1,13 +1,17 @@
 import axios from "axios";
+import { useState } from "react";
 
-export default function Sidebar({ setCurrent, setProposed, setMapping }) {
+export default function Sidebar({ setCurrent, setProposed, setMapping, setMeta }) {
   const apiBase = process.env.REACT_APP_API_BASE_URL || "http://127.0.0.1:8000";
+  const [boundaryPath, setBoundaryPath] = useState("");
 
   const runRequest = async (baseUrl) => {
-    const res = await axios.get(`${baseUrl}/run`);
+    const params = boundaryPath.trim() ? { boundary_path: boundaryPath.trim() } : undefined;
+    const res = await axios.get(`${baseUrl}/run`, { params });
     setCurrent(res.data.current);
     setProposed(res.data.proposed);
     setMapping(res.data.mapping || { current: [], proposed: [] });
+    setMeta(res.data.meta || null);
   };
 
   const handleRun = async () => {
@@ -37,6 +41,15 @@ export default function Sidebar({ setCurrent, setProposed, setMapping }) {
   return (
     <div style={{ width: "20%", padding: "10px" }}>
       <h3>Controls</h3>
+      <div style={{ marginBottom: "10px", fontSize: "12px", color: "#444" }}>
+        ZIP boundary file/folder path (optional)
+      </div>
+      <input
+        value={boundaryPath}
+        onChange={(event) => setBoundaryPath(event.target.value)}
+        placeholder="/path/to/zip_boundaries.geojson or .shp/.zip folder"
+        style={{ width: "100%", marginBottom: "8px", padding: "6px", fontSize: "12px" }}
+      />
       <button onClick={handleRun}>Run Alignment</button>
     </div>
   );

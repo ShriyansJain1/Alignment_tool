@@ -296,7 +296,7 @@ def build_territory_zip_shape_mapping(df, territory_col, shape_id_by_zip):
     return sorted(rows, key=lambda r: (r["territory"], r["zip"]))
 
 
-def load_zip_boundaries():
+def load_zip_boundaries(path_override=None):
     """Load ZIP boundary data from either GeoJSON or a shapefile path."""
     def normalize_input_path(raw_value):
         """Normalize env-provided paths, including Windows-style inputs."""
@@ -395,6 +395,25 @@ def load_zip_boundaries():
 
             return read_shapefile_as_feature_collection(shp_candidates[0])
 
+    if path_override:
+        override_resolved = normalize_input_path(path_override)
+        if override_resolved and override_resolved.exists():
+            if override_resolved.is_file():
+                suffix = override_resolved.suffix.lower()
+                if suffix in [".geojson", ".json"]:
+                    with open(override_resolved, "r", encoding="utf-8") as f:
+                        return json.load(f)
+                if suffix == ".zip":
+                    boundaries = read_zipped_boundary_archive(override_resolved)
+                    if boundaries:
+                        return boundaries
+                if suffix == ".shp":
+                    return read_shapefile_as_feature_collection(override_resolved)
+            elif override_resolved.is_dir():
+                shp_resolved = resolve_shp_from_input(str(override_resolved))
+                if shp_resolved and shp_resolved.exists():
+                    return read_shapefile_as_feature_collection(shp_resolved)
+
     geojson_path = os.getenv("ZIP_BOUNDARY_GEOJSON")
     geojson_path_resolved = normalize_input_path(geojson_path)
     if geojson_path_resolved and geojson_path_resolved.exists():
@@ -424,11 +443,14 @@ def load_zip_boundaries():
 
 
 @app.get("/run")
-def run():
+def run(boundary_path: str | None = None):
     configured_boundary_inputs = {
         key: os.getenv(key) for key in BOUNDARY_ENV_KEYS if os.getenv(key)
     }
-    zip_boundaries = load_zip_boundaries()
+    if boundary_path:
+        configured_boundary_inputs["boundary_path_query"] = boundary_path
+
+    zip_boundaries = load_zip_boundaries(path_override=boundary_path)
     geometry_by_zip = None
     shape_id_by_zip = {}
     source = "synthetic_hex_grid"
