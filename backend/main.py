@@ -1,9 +1,13 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
 import pandas as pd
 import numpy as np
 import json
 import os
+import re
+import tempfile
+import zipfile
 from pathlib import Path
 
 from geo_utils import (
@@ -72,6 +76,40 @@ STATE_BBOX = {
     "WI": (42.4, 47.3, -92.9, -86.8),
     "WY": (41.0, 45.0, -111.1, -104.0),
 }
+
+BOUNDARY_ENV_KEYS = [
+    "ZIP_BOUNDARY_GEOJSON",
+    "ZIP_BOUNDARY_SHP",
+    "ZIP_BOUNDARY_SHP_ZIP",
+    "ZIP_BOUNDARY_DIR",
+]
+
+
+def normalize_input_path(raw_value):
+    """Normalize env-provided paths, including Windows-style inputs."""
+    if not raw_value:
+        return None
+
+    cleaned = str(raw_value).strip().strip('"').strip("'")
+    if not cleaned:
+        return None
+
+    # If a native/relative path exists as provided, use it first.
+    direct = Path(cleaned).expanduser()
+    if direct.exists():
+        return direct
+
+    # Accept Windows paths like C:\Users\name\file.shp (common from PowerShell).
+    windows_drive_match = re.match(r"^([A-Za-z]):[\\/](.*)$", cleaned)
+    if windows_drive_match:
+        drive = windows_drive_match.group(1).lower()
+        rest = windows_drive_match.group(2).replace("\\", "/")
+        wsl_candidate = Path(f"/mnt/{drive}/{rest}")
+        if wsl_candidate.exists():
+            return wsl_candidate
+
+    # Fall back to the cleaned path so downstream checks can handle it.
+    return Path(cleaned)
 
 
 def closest_state(lat, lon):
@@ -200,7 +238,9 @@ def load_zip_boundaries():
         return {"type": "FeatureCollection", "features": features}
 
     def resolve_shp_from_input(path_or_dir):
-        path = Path(path_or_dir)
+        path = normalize_input_path(path_or_dir)
+        if path is None:
+            return None
         if path.is_file():
             return path
         if not path.is_dir():
@@ -215,9 +255,34 @@ def load_zip_boundaries():
                 return candidate
         return shp_candidates[0]
 
+    def read_zipped_boundary_archive(zip_path):
+        """Read a ZIP archive containing either a GeoJSON or shapefile set."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            with zipfile.ZipFile(zip_path, "r") as archive:
+                archive.extractall(tmp_dir)
+
+            extracted_root = Path(tmp_dir)
+
+            # Prefer direct GeoJSON if present.
+            geojson_candidates = sorted(extracted_root.rglob("*.geojson"))
+            if geojson_candidates:
+                with open(geojson_candidates[0], "r", encoding="utf-8") as f:
+                    return json.load(f)
+
+            shp_candidates = sorted(extracted_root.rglob("*.shp"))
+            if not shp_candidates:
+                return None
+
+            for candidate in shp_candidates:
+                if "zcta" in candidate.name.lower():
+                    return read_shapefile_as_feature_collection(candidate)
+
+            return read_shapefile_as_feature_collection(shp_candidates[0])
+
     geojson_path = os.getenv("ZIP_BOUNDARY_GEOJSON")
-    if geojson_path and os.path.exists(geojson_path):
-        with open(geojson_path, "r", encoding="utf-8") as f:
+    geojson_path_resolved = normalize_input_path(geojson_path)
+    if geojson_path_resolved and geojson_path_resolved.exists():
+        with open(geojson_path_resolved, "r", encoding="utf-8") as f:
             return json.load(f)
 
     shp_path = os.getenv("ZIP_BOUNDARY_SHP")
@@ -227,8 +292,11 @@ def load_zip_boundaries():
             return read_shapefile_as_feature_collection(shp_resolved)
 
     shp_zip_path = os.getenv("ZIP_BOUNDARY_SHP_ZIP")
-    if shp_zip_path and os.path.exists(shp_zip_path):
-        return read_shapefile_as_feature_collection(shp_zip_path)
+    shp_zip_path_resolved = normalize_input_path(shp_zip_path)
+    if shp_zip_path_resolved and shp_zip_path_resolved.exists():
+        boundaries = read_zipped_boundary_archive(shp_zip_path_resolved)
+        if boundaries:
+            return boundaries
 
     shp_dir = os.getenv("ZIP_BOUNDARY_DIR")
     if shp_dir:
@@ -241,6 +309,9 @@ def load_zip_boundaries():
 
 @app.get("/run")
 def run():
+    configured_boundary_inputs = {
+        key: os.getenv(key) for key in BOUNDARY_ENV_KEYS if os.getenv(key)
+    }
     zip_boundaries = load_zip_boundaries()
     geometry_by_zip = None
     source = "synthetic_hex_grid"
@@ -248,10 +319,28 @@ def run():
     if zip_boundaries:
         df, geometry_by_zip = build_zip_frame_from_boundaries(zip_boundaries)
         if df.empty:
-            df = generate_us_grid()
-            geometry_by_zip = None
-        else:
-            source = "zip_boundary_polygons"
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "ZIP boundaries were loaded but no ZIP code field could be indexed. "
+                    "Expected one of: zip, ZIP, zcta, ZCTA, GEOID, GEOID10, GEOID20, "
+                    "ZCTA5CE10, ZCTA5CE20, ZCTA5CE, ZCTA5CE21."
+                ),
+            )
+        source = "zip_boundary_polygons"
+    elif configured_boundary_inputs:
+        resolved = {
+            key: str(normalize_input_path(value))
+            for key, value in configured_boundary_inputs.items()
+        }
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Boundary input env var is set, but no boundary file could be loaded. "
+                f"Configured inputs: {configured_boundary_inputs}. "
+                f"Resolved paths: {resolved}."
+            ),
+        )
     else:
         df = generate_us_grid()
 
@@ -283,3 +372,7 @@ def run():
             "joined_polygon_count": int(len(current_geojson.get("features", []))),
         },
     }
+
+
+if __name__ == "__main__":
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
