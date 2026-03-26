@@ -4,6 +4,9 @@ import pandas as pd
 import numpy as np
 import json
 import os
+import re
+import tempfile
+import zipfile
 from pathlib import Path
 
 from geo_utils import (
@@ -179,6 +182,32 @@ def build_territory_column(df, source_col, target_col):
 
 def load_zip_boundaries():
     """Load ZIP boundary data from either GeoJSON or a shapefile path."""
+    def normalize_input_path(raw_value):
+        """Normalize env-provided paths, including Windows-style inputs."""
+        if not raw_value:
+            return None
+
+        cleaned = str(raw_value).strip().strip('"').strip("'")
+        if not cleaned:
+            return None
+
+        # If a native/relative path exists as provided, use it first.
+        direct = Path(cleaned).expanduser()
+        if direct.exists():
+            return direct
+
+        # Accept Windows paths like C:\Users\name\file.shp (common from PowerShell).
+        windows_drive_match = re.match(r"^([A-Za-z]):[\\/](.*)$", cleaned)
+        if windows_drive_match:
+            drive = windows_drive_match.group(1).lower()
+            rest = windows_drive_match.group(2).replace("\\", "/")
+            wsl_candidate = Path(f"/mnt/{drive}/{rest}")
+            if wsl_candidate.exists():
+                return wsl_candidate
+
+        # Fall back to the cleaned path so downstream checks can handle it.
+        return Path(cleaned)
+
     def read_shapefile_as_feature_collection(shp_like_path):
         import shapefile
 
@@ -200,7 +229,9 @@ def load_zip_boundaries():
         return {"type": "FeatureCollection", "features": features}
 
     def resolve_shp_from_input(path_or_dir):
-        path = Path(path_or_dir)
+        path = normalize_input_path(path_or_dir)
+        if path is None:
+            return None
         if path.is_file():
             return path
         if not path.is_dir():
@@ -215,9 +246,34 @@ def load_zip_boundaries():
                 return candidate
         return shp_candidates[0]
 
+    def read_zipped_boundary_archive(zip_path):
+        """Read a ZIP archive containing either a GeoJSON or shapefile set."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            with zipfile.ZipFile(zip_path, "r") as archive:
+                archive.extractall(tmp_dir)
+
+            extracted_root = Path(tmp_dir)
+
+            # Prefer direct GeoJSON if present.
+            geojson_candidates = sorted(extracted_root.rglob("*.geojson"))
+            if geojson_candidates:
+                with open(geojson_candidates[0], "r", encoding="utf-8") as f:
+                    return json.load(f)
+
+            shp_candidates = sorted(extracted_root.rglob("*.shp"))
+            if not shp_candidates:
+                return None
+
+            for candidate in shp_candidates:
+                if "zcta" in candidate.name.lower():
+                    return read_shapefile_as_feature_collection(candidate)
+
+            return read_shapefile_as_feature_collection(shp_candidates[0])
+
     geojson_path = os.getenv("ZIP_BOUNDARY_GEOJSON")
-    if geojson_path and os.path.exists(geojson_path):
-        with open(geojson_path, "r", encoding="utf-8") as f:
+    geojson_path_resolved = normalize_input_path(geojson_path)
+    if geojson_path_resolved and geojson_path_resolved.exists():
+        with open(geojson_path_resolved, "r", encoding="utf-8") as f:
             return json.load(f)
 
     shp_path = os.getenv("ZIP_BOUNDARY_SHP")
@@ -227,8 +283,11 @@ def load_zip_boundaries():
             return read_shapefile_as_feature_collection(shp_resolved)
 
     shp_zip_path = os.getenv("ZIP_BOUNDARY_SHP_ZIP")
-    if shp_zip_path and os.path.exists(shp_zip_path):
-        return read_shapefile_as_feature_collection(shp_zip_path)
+    shp_zip_path_resolved = normalize_input_path(shp_zip_path)
+    if shp_zip_path_resolved and shp_zip_path_resolved.exists():
+        boundaries = read_zipped_boundary_archive(shp_zip_path_resolved)
+        if boundaries:
+            return boundaries
 
     shp_dir = os.getenv("ZIP_BOUNDARY_DIR")
     if shp_dir:
