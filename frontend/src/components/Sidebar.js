@@ -1,12 +1,13 @@
 import axios from "axios";
 
-export default function Sidebar({ setCurrent, setProposed }) {
+export default function Sidebar({ setCurrent, setProposed, setMapping }) {
   const apiBase = process.env.REACT_APP_API_BASE_URL || "http://127.0.0.1:8000";
 
   const runRequest = async (baseUrl) => {
     const res = await axios.get(`${baseUrl}/run`);
     setCurrent(res.data.current);
     setProposed(res.data.proposed);
+    setMapping(res.data.mapping || { current: [], proposed: [] });
   };
 
   const handleRun = async () => {
