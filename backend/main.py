@@ -2,8 +2,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 import numpy as np
+import json
+import os
 
-from geo_utils import generate_geojson
+from geo_utils import (
+    generate_geojson,
+    generate_geojson_with_boundaries,
+    index_boundaries_by_zip,
+)
 
 app = FastAPI()
 
@@ -115,20 +121,47 @@ def apply_proposed_merges(df):
     return df
 
 
+def build_territory_column(df, source_col, target_col):
+    territory_keys = sorted(df[source_col].unique())
+    territory_id_map = {territory: idx for idx, territory in enumerate(territory_keys)}
+    df[target_col] = df[source_col].map(territory_id_map)
+    return df
+
+
+def load_zip_boundaries():
+    """Load ZIP boundary GeoJSON from ZIP_BOUNDARY_GEOJSON path, if configured."""
+    path = os.getenv("ZIP_BOUNDARY_GEOJSON")
+    if not path or not os.path.exists(path):
+        return None
+
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
 @app.get("/run")
 def run():
     df = generate_us_grid()
 
-    current_states = sorted(df["state"].unique())
-    current_id_map = {state: idx for idx, state in enumerate(current_states)}
-    df["current_territory"] = df["state"].map(current_id_map)
+    df = build_territory_column(df, "state", "current_territory")
 
     df = apply_proposed_merges(df)
-    proposed_states = sorted(df["proposed_state"].unique())
-    proposed_id_map = {state: idx for idx, state in enumerate(proposed_states)}
-    df["proposed_territory"] = df["proposed_state"].map(proposed_id_map)
+    df = build_territory_column(df, "proposed_state", "proposed_territory")
+
+    zip_boundaries = load_zip_boundaries()
+    geometry_by_zip = index_boundaries_by_zip(zip_boundaries) if zip_boundaries else None
+
+    if geometry_by_zip:
+        current_geojson = generate_geojson_with_boundaries(
+            df, "current_territory", geometry_by_zip
+        )
+        proposed_geojson = generate_geojson_with_boundaries(
+            df, "proposed_territory", geometry_by_zip
+        )
+    else:
+        current_geojson = generate_geojson(df, "current_territory")
+        proposed_geojson = generate_geojson(df, "proposed_territory")
 
     return {
-        "current": generate_geojson(df, "current_territory"),
-        "proposed": generate_geojson(df, "proposed_territory"),
+        "current": current_geojson,
+        "proposed": proposed_geojson,
     }
