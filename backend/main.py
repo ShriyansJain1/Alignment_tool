@@ -218,6 +218,32 @@ def build_territory_column(df, source_col, target_col):
 
 def load_zip_boundaries():
     """Load ZIP boundary data from either GeoJSON or a shapefile path."""
+    def normalize_input_path(raw_value):
+        """Normalize env-provided paths, including Windows-style inputs."""
+        if not raw_value:
+            return None
+
+        cleaned = str(raw_value).strip().strip('"').strip("'")
+        if not cleaned:
+            return None
+
+        # If a native/relative path exists as provided, use it first.
+        direct = Path(cleaned).expanduser()
+        if direct.exists():
+            return direct
+
+        # Accept Windows paths like C:\Users\name\file.shp (common from PowerShell).
+        windows_drive_match = re.match(r"^([A-Za-z]):[\\/](.*)$", cleaned)
+        if windows_drive_match:
+            drive = windows_drive_match.group(1).lower()
+            rest = windows_drive_match.group(2).replace("\\", "/")
+            wsl_candidate = Path(f"/mnt/{drive}/{rest}")
+            if wsl_candidate.exists():
+                return wsl_candidate
+
+        # Fall back to the cleaned path so downstream checks can handle it.
+        return Path(cleaned)
+
     def read_shapefile_as_feature_collection(shp_like_path):
         if importlib.util.find_spec("shapefile") is None:
             raise HTTPException(
