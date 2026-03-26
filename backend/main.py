@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import pandas as pd
 import numpy as np
+import importlib
 import json
 import os
 import re
@@ -83,6 +84,19 @@ BOUNDARY_ENV_KEYS = [
     "ZIP_BOUNDARY_SHP_ZIP",
     "ZIP_BOUNDARY_DIR",
 ]
+
+
+@app.get("/")
+def healthcheck():
+    return {
+        "status": "ok",
+        "message": "Alignment Tool backend is running. Use /run for geo output.",
+    }
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    return {"detail": "No favicon configured."}
 
 
 def normalize_input_path(raw_value):
